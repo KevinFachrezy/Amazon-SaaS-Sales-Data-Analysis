@@ -9,44 +9,33 @@ Dataset dapat diambil [disni](https://www.kaggle.com/datasets/nnthanh101/aws-saa
 
 ---
 
-## 1. User data
+## 1. Import Library
 
-User data adalah tempat penyimpanan informasi user. User data ini nanti digunakan untuk mengakses Library System.
+Sebelum melakukan data analysis, ada beberapa library yang harus diimport.
 
 ```python
-users = {
-    "visitor": {"username": "visitor", "password": "visit123"},
-    "librarian": {"username": "librarian", "password": "lib123"}
-}
-```
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import plotly.express as px
+from scipy import stats
+from scipy.stats import normaltest, chi2_contingency, mannwhitneyu, ttest_ind
 
-Untuk project ini, user data akan bersifat statik untuk mempermudah penggunaan.
+import warnings
+warnings.filterwarnings("ignore")
+```
 
 ---
 
-## 2. Book Dictionary
+## 2. Import Dataset
 
-Book dictionary adalah sebuah collection data type dictionary yang digunakan untuk menyimpan koleksi buku-buku di dalam perpustakaan.
+Setelah mendownload dataset dari Kaggle, lakukan pembuatan dataframe menggunakan built-in function dari Numpy
 
 ```python
-books = {
-    "Fiction": [
-        {"book_id": "01-FI-2003", "name": "Kisah Legenda Indonesia", "year": 2003, "status": "available"},
-        {"book_id": "02-FI-2007", "name": "European Folklore", "year": 2007, "status": "available"},
-        {"book_id": "03-FI-2000", "name": "Tales From The Arabian Peninsula", "year": 2000, "status": "not available"},
-    ],
-    "Educational": [
-        {"book_id": "01-ED-2019", "name": "Introduction To Python Programming", "year": 2019, "status": "available"},
-        {"book_id": "02-ED-1995", "name": "Programming Fundamentals", "year": 1995, "status": "available"},
-    ],
-    "Cooking": [
-        {"book_id": "01-CO-2010", "name": "100 Resep Tradisional", "year": 2010, "status": "available"},
-        {"book_id": "02-CO-2004", "name": "Resep Menu Simple", "year": 2004, "status": "available"},
-    ]
-}
+df = pd.read_csv('SaaS-Sales.csv', parse_dates=['Order Date'], dtype={'Customer ID': str})
+display(df.head(), df.tail())
 ```
-
-Setiap koleksi yang ada di dalam books akan dipisah per genre dari buku tersebut dan memiliki unique identifier yaitu **book_id.**
 
 ---
 
