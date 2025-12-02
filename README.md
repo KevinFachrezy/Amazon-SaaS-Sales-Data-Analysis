@@ -39,514 +39,228 @@ display(df.head(), df.tail())
 
 ---
 
-## 3. Borrowed Book Dictionary
+## 3. Data Cleaning
 
-Borrowed book adalah sebuah dictionary kosong yang digunakan untuk menyimpan buku yang nantinya akan dipinjam oleh user **visitor**. 
+Sebelum melakukan analisi, data cleaning harus dilakukan untuk menghindari outliers.
 
+Pertama, lakukan pengecekan missing values
 ```python
-borrowedBooks = []
+print("\n==== Missing Values ====")
+print(df.isnull().sum())
+
+plt.figure(figsize=(10,10))
+sns.heatmap(df[['Row ID','Order Date','Date Key','Contact Name','Country','City','Region','Subregion','Customer','Customer ID','Industry','Segment','Product','Sales','Quantity','Discount','Profit']].isna())
 ```
 
-Dictionary ini akan diinisiasi empty.
+Kemudian, cari duplicate rows.
+```python
+print("\n==== Duplicate Rows ====")
+print(f"Duplicates: {df.duplicated().sum()}")
+```
+
+
+Terakhir lakukan feature engineering untuk mencari profit margin
+```python
+negative_sales = df[df['Sales'] < 0]
+if not negative_sales.empty:
+    print(f"Warning: Removed {len(negative_sales)} rows with Negative Sales")
+    df = df[df['Sales'] >= 0]
+
+    
+df['Profit Margin'] = (df['Profit'] / df['Sales'] * 100)
+
+# Display cleaned dataset
+print(f"Cleaned Dataset Shape: {df.shape}")
+display(df.head())
+display(df.tail())
+```
 
 ---
 
-## 4. Functions
+## 4. Data Analysis
 
-Functions adalah core logic dari Library System. Functions mengatur pengolahan data dan interaksi dengan user. Dalam Library System terdapat sepuluh function.
+Setelah melakukan cleaning dan feature engineering, analisa dapat dilakukan. 
 
-- `displayBook()` ****→ display semua buku yang ada di library
-- `generateBookId()` → generate id buku baru
-- `addBook()` → menambah buku ke library
-- `removeBook()` → delete buku dari library
-- `borrowBook()` → meminjam buku dari library
-- `viewBorrowBooks()` → melihat buku yang telah dipinjam
-- `returnBook()` → mengembalikan buku yang dipinjam
-- `login()` → login akses ke dalam Library System
-- `logout()` ****→ logout dari system
-- `mainMenu()` → menu utama untuk library system
-
----
-
-# Penjelasan Function
-
----
-
-## 1. Function `displayBook()`
+Analisa pertama yang dilakukan adalah mencari transaksi yang tidak menguntungkan.
 
 ```python
-def displayBooks()
+loss_df = df[df['Profit'] < 0]
+profit_df = df[df['Profit'] >= 0]
+
+loss_count = len(loss_df)
+total_count = len(df)
+loss_persen = (loss_count / total_count) * 100
+
+print(f"Total Transaksi: {total_count}")
+print(f"Transaksi yang tidak menguntungakan: {loss_count} ({loss_persen:.2f}%)")
+print(f"Total kerugian: {loss_df['Profit'].sum():.2f}")
 ```
 
-Function `displayBooks()` digunakan untuk mendisplay semua buku dalam library. Dalam function ini digunakan For loop untuk melakukan iterasi book dictionary yang nantinya data dari looping akan ditampilkan menggunakan fitur dari `tabulate` 
-
-### displayBook main feature
+Selanjutnya lakukan analisa region dan subregion. Tujuannya adalah agar informasi profit per region dan sub-region dapat dilihat.
 
 ```python
-print("\n=== DAFTAR BUKU ===")
-    for genre, bookList in books.items():
-        print(f"\n--- {genre.upper()} ---")
-        
-        # Kode untuk sort based on book id
-        sortView = sorted(
-            bookList, 
-            key = lambda book: int(book["book_id"].split("-")[0])
-            )
-        # Kode untuk display book dengan fungsi built-in tabulate
-        headers = ["Book Id", "Judul", "Tahun Publikasi", "Status"]
-        table = [[book["book_id"], book["name"], book["year"], book["status"]] for book in sortView]
-        print(tabulate(table, headers=headers, tablefmt="grid"))
+region_analysis = df.groupby(['Region', 'Subregion']).agg({
+    'Sales': 'sum',
+    'Profit': 'sum',
+    'Order ID': 'count'
+}).reset_index()
+
+#Rasio profit untuk region
+region_analysis['Profit Ratio'] = region_analysis['Profit'] / region_analysis['Sales']
+
+#Sort dari profit terendah
+region_analysis = region_analysis.sort_values(by='Profit', ascending = True)
+
+display(region_analysis)
+
+#Visualisasi
+plt.figure(figsize=(12, 6))
+sns.barplot(data=region_analysis, x='Subregion', y='Profit', hue='Region', palette='viridis')
+plt.title('Total Profit by Subregion')
+plt.axhline(0, color='red', linestyle='--') # Garis 0 profit
+plt.xticks(rotation=45)
+plt.show()
 ```
 
-Dalam function ini buku akan ditampilkan berdasarkan genre dan **book_id** yang sudah disortir di variable `sortView` yang didalamnya menggunakan lambda function untuk melakukan pengambilan number dari book_id melalui perintah `.split(”-”)`
-
-### Contoh penggunaan
+Selanjutnya analisa produk. Analisa ini dilakukan agar pengguna bisa mendapatkan informasi terkait produk mana yang mengalami kerugian, informasi ini juga ditambah dengan pesebaran diskon dan profit.
 
 ```python
-{"book_id": "01-FI-2003", "name": "Kisah Legenda Indonesia", "year": 2003, "status": "available"},
+# Analisa Produk
+product_analysis = df.groupby(['Product']).agg({
+    'Sales': 'sum',
+    'Profit': 'sum',
+    'Discount': 'mean'
+}).reset_index()
+
+#Filter untuk produk dengan total profit negatif
+product_negative = product_analysis[product_analysis['Profit'] < 0].sort_values('Profit')
+
+print("Produk yang mengalami profit loss:")
+print(product_negative)
+
+# Visualisasi Discount
+plt.figure(figsize=(10, 6))
+sns.scatterplot(data=product_analysis, x='Sales', y='Profit', size='Discount', hue='Discount', sizes=(20, 200), palette='coolwarm')
+plt.title('Product Performance: Sales vs Profit (Color/Size = Avg Discount)')
+plt.axhline(0, color='black', linestyle='--')
+plt.show()
+
+# Visualisasi total profit by product
+product_analysis = product_analysis.sort_values('Profit', ascending=True)
+product_analysis['Profit Status'] = product_analysis['Profit'].apply(lambda x: 'Profit' if x >= 0 else 'Loss')
+
+plt.figure(figsize=(12, 8))
+sns.barplot(data=product_analysis, x='Profit', y='Product', hue='Profit Status', dodge=False, palette={'Profit': 'green', 'Loss': 'red'})
+plt.title('Total Profit by Product')
+plt.xlabel('Total Profit')
+plt.ylabel('Product')
+plt.axvline(0, color='black', linestyle='--', linewidth=1)
+plt.legend(title='Status')
+plt.show()
 ```
 
-Saat menggunakan `.split(”-”)` , book_id akan terpisah menjadi collection type `{”01”, “FI”, “2003”}`. Lalu akan diambil index 0 yaitu **“01”.**
-
-### displayBook empty checker
-
-Dalam function `displayBook()` ada juga fitur cek empty yang berfungsi untuk mengecek genre kosong dalam dictionary **`books`** 
+Setelah melakukan analisa produk, lakukan hipotesis testing untuk menguji apakah discount rate yang tinggi berpengaruh dengan profit
 
 ```python
-isEmpty = []
-    # Looping dictionary books dan add genre yang tidak memiliki book
-    for genre, book in books.items():
-        if not book:
-            isEmpty.append(genre)
-    # Loop jika ada genre lain yang kosong
-    for genre in isEmpty:
-        del books[genre]  
+# ==== Hypothesis testing ====
+
+
+# Pembuatan threshold menjadi 2 kelompok
+# kelompok A: High Discount
+# kelompok B: Low Discount
+
+# H0: Mean dari profit margin dari transaksi High Discount sama dengan transaksi Low Discount
+# H1: Mean dari profit margin dari transaksi High Discount lebih rendah transaksi Low Discount
+high_discount = df[df['Discount'] > 0.2]['Profit Margin']
+low_discount = df[df['Discount'] <= 0.2]['Profit Margin']
+
+t_stat, p_val = stats.ttest_ind(high_discount, low_discount, equal_var=False, alternative='less')
+
+print("==== Hasil Hypothesis Testing ====")
+print(f"Mean proft margin untuk diskon tinggi: {high_discount.mean()}")
+print(f"Mean proft margin untuk diskon rendah: {low_discount.mean()}")
+print(f"T-statisik: {t_stat:.4f}")
+print(f"P-Value: {p_val:.4e}")
+
+alpha = 0.05
+if p_val < alpha:
+    print("\nTolak H0.")
+    print("Ada cukup bukti yang menyatakan bahwa penjualan dengan diskon tinggi(>20%) dapat mengakibatkan profit margin rendah")
+else:
+    print("\nGagal menolak H0")
+    print("Tidak cukup bukti untuk menyatakan penjualan dengan diskon tinggi dapat engakibatkan profit margin rendah")
 ```
 
-- Kode ini akan membuat empty dictionary yang kemudian akan diisi melalui For loop yang mengecek isi dari dictionary `books` .
-    - jika tidak ada isi maka akan menambahkan genre kedalam `isEmpty` dan di delete dalam For loop kedua.
-
----
-
-## 2. Function `generateBookId()`
+Kemudian lakukan analisa customer untuk mencari customer mana yang memiliki profit margin rendah
 
 ```python
-def generateBookId(genre, year): 
+df_copy = df.drop_duplicates(inplace=True)
+df_copy = df[df['Sales'] >= 0]
+
+# Customer Analysis
+
+# Customer Grouping
+cust_analys = df_copy.groupby(['Customer ID', 'Customer', 'Segment']).agg({
+    'Sales': 'sum',
+    'Profit': 'sum',
+    'Discount': 'mean',
+    'Quantity': 'sum',
+    'Order ID': 'nunique'
+}).reset_index()
+
+# Customer Profit Margin
+cust_analys['Profit Margin'] = (cust_analys['Profit'] / cust_analys['Sales'] * 100)
+
+# Customer with negative profit
+unprofit_cust = cust_analys[cust_analys['Profit'] < 0].sort_values(by='Sales', ascending=False)
+
+print("\n==== Top 10 customer with negative profits ====")
+display(unprofit_cust.head(10))
 ```
 
-Function `generateBookId()` digunakan untuk automasi pembuatan book_id saat penambahan buku. Fungsi ini menggunakan parameter genre dan year yang nantinya akan digunakan dalam pembuatan book_id.
-
-### generateBookId genre code slicing and find Id
+Terkahir, lakukan analisa segmen dan correlation testing
 
 ```python
-# Kode untuk mencari genreCode (slicing 2 huruf pertama dari genre)
-    genreCode = genre[:2].upper()
-    bookList = books.get(genre, [])
+# Segment Analysis
+
+segment_analysis = cust_analys.groupby('Segment').agg({
+    'Profit': 'sum',
+    'Sales': 'sum',
+    'Discount': 'mean',
+    'Customer ID': 'count'
+}).reset_index()
+segment_analysis['Profit Margin'] = (segment_analysis['Profit']/segment_analysis['Sales'] * 100)
+print("\n==== Profitability by Segment ====")
+display(segment_analysis)
+
+# Correlation Analysis
+corr = cust_analys[['Sales', 'Profit', 'Discount','Profit Margin']].corr()
+print("\n ==== Correlation ====")
+print(corr)
+
+
+# Visualization: Correlation Heatmap
+plt.figure(figsize=(8, 6))
+sns.heatmap(corr, annot=True, cmap='coolwarm', fmt=".2f")
+plt.title('Correlation Matrix: Customer Performance Metrics')
+plt.show()
+
+# Hypothesis Testing
+# H0: Ada korelasi antara discount dengan profit margin customer
+# H1: Tidak ada hubungan antara discount dengan profit margin customer
+
+
+cust_analys_clean = cust_analys.dropna(subset=['Discount', 'Profit Margin'])
+
+corr_coef, p_value = stats.pearsonr(cust_analys_clean['Discount'], cust_analys_clean['Profit Margin'])
+
+print("\n==== Pearson Correlation Test ====")
+print(f"Corr Coefficient: {corr_coef:.4f}")
+print(f"P-value: {p_value:.4e}")
+
+alpha = 0.05
+if p_value < alpha:
+    print("Tolak H0: Ada bukti statistik bahwa terdapat korelasi antara diskon dan profit margin")
+else:
+    print("Gagal tolak H0: Tidak terdapat bukti untuk menyatakan bahwa terdapat korelasi antara diskon dan profit margin")
 ```
-
-Dalam snippet ini, 
-
-- parameter `genre` akan dislicing dimana dua huruf pertama dalam nama genre akan dimbil dan dikapitalkan. Lalu `bookList`  akan mengambil nama `genre` dan isinya.
-    - `bookList` ini nantinya akan digunakan untuk For loop.
-
-```python
-# Kode untuk mencari book id
-    existingId = [int(book["book_id"].split("-")[0]) for book in bookList]
-```
-
-Setelah slicing dan pembuatan bookList, `existingId` akan digunakan untuk mencari book_id dengan cara membuat dictionary yang berisi angka id dari For loop `book` dalam `bookList` .
-
-### generateBookId bookId checking
-
-```python
- # Kode If jika tidak ada book (untuk buku baru), else cari id yang missing dari sorted id
-    if not existingId:
-        nextId = 1
-    else:
-        maxId = max(existingId)
-        possibleId = set(range(1, maxId + 2))
-        missingId = sorted(list(possibleId - set(existingId)))
-        nextId = missingId[0]
-        
-    if nextId in existingId: # if untuk mengecek duplikat id
-        nextId = max(existingId) + 1
-    elif nextId == 0: # elif untuk mencegah id 00
-        nextId = 1
-```
-
-- Kode ini digunakan untuk mengecek Id buku. Jika `existingId` **kosong**, maka akan membuat `nextId` 1.
-- Jika function menemukan existingId maka akan dilakukan pencarian `possibleId` menggunakan `set` dengan `range 1 sampai maxId +2` .
-    - Dari hasil tersebut, `missingId` akan dicari dengan cara melakukan pengurangan set `possibleId` dengan `existingId`
-    - Hasil dari pengurangan set akan dijadikan list dan disorting. Lalu `nextId` akan menjadi **index 0** dari `missingId`.
-- Setelah mendapatkan `nextId`, fungsi If digunakan untuk mengecek apakah ada duplikasi dari Id. Jika ada `nextId` menjadi 1 lebih dari `existingId`.
-    - Jika `nextId` sama dengan 0 maka `nextId` akan diubah menjadi 1 untuk menghindari kode buku 00.
-
-### generateBookId return bookId
-
-```python
-# return id dengan format nextId-kode genre-tahun   
-    return f"{nextId:02d}-{genreCode}-{year}"
-```
-
-Function akan diakhiri dengan return format `nextId`-genre-tahun.
-
-## 3. Function `addBook()`
-
-```python
-def addBook():
-```
-
-Function `addBook()` adalah function khusus untuk user librarian yang digunakan untuk menambah buku kedalam `books` dictionary.
-
-### addBook main feature
-
-```python
-genre = input("Masukkan genre buku baru:").title()
-        
-        if not genre.isalpha():
-            print("\nGenre tidak boleh mengandung angka. Silahkan coba lagi!\n")
-            continue
-        
-        name = input("Masukkan nama buku baru: ").strip().title()
-        year = input("Masukkan tahun terbit: ")
-        
-        if not year.isdigit():
-            print("\nTahun terbit harus berupa angka. Silahkan coba lagi!")
-            continue
-        
-        # If genre tidak ada dalam dictionary, akan membuat genre baru
-        if genre not in books:
-            books[genre] = []
-```
-
-- User akan diminta untuk menginput `genre` buku yang dimana genre tidak bisa mengandung angka
-    - Jika genre yang diinput belum ada maka function akan membuat genre baru.
-- Kemudian user menginput judul buku yang akan ada dalam variabel `name` dan tahun terbit dalam `year`
-    - Year harus berupa angka, jika tidak maka loop akan mengulang.
-
-### addBook cek duplicate
-
-```python
-duplicate = False
-        for book in books[genre]:
-            if book["name"].lower() == name.lower():
-                print("\nBuku dengan nama tersebut sudah ada dalam genre ini.\n")
-                duplicate = True
-                break
-        
-        if duplicate:
-            continue
-```
-
-Setelah input informasi buku, akan ada pengecekan duplikasi judul dimana judul buku yang diinput akan dicek dengan nama buku dalam `books` dictionary.
-
-- Jika duplikasi ditemukan, akan break loop dan kembali ke menu utama.
-
-### addBook add buku baru ke `books` dictionary
-
-```python
-bookId = generateBookId(genre, year)
-        books[genre].append({
-            "book_id": bookId,
-            "name": name,
-            "year": int(year),
-            "status": "available"
-        })
-        
-        print(f"\nBuku '{name}' berhasil ditambahkan ke genre {genre} dengan id {bookId}!")
-```
-
-- Setelah pengecekan berhasil, function `generateBookId()` akan dipanggil dengan parameter `genre` dan `year` yang telah diinput sebelumnya.
-- Buku baru kemudian di `append` ke dalam dictionary `books`.
-- Pesan berhasil akan diprint setelah proses append.
-
-### addBook repeat addition
-
-```python
-while True:
-            repeat = input("Apakah anda ingin menambahkan buku lain? (ya/tidak): ").strip().lower()
-            if repeat == "ya":
-                break
-            elif repeat == "tidak":
-                print("\nKembali ke menu ...\n")
-                return
-            else:
-                print("Input tidak valid. Ketik 'ya' atau 'tidak'\n")
-```
-
-Setelah buku berhasil diinput, pesan konfirmasi akan muncul.
-
-- User harus menginput antara “ya” atau “tidak”. Jika user input “ya”, proses input buku akan berulang. Jika “tidak”, user akan kembali ke menu utama.
-- Jika user menginput selain “ya” atau “tidak”, loop konfirmasi akan berulang.
-
----
-
-## 4. Function `removeBook()`
-
-```python
-def removeBook():
-```
-
-Function `removeBook()` adalah function khusus user type Librarian yang digunakan untuk menghapus buku dari `books` dictionary.
-
-### removeBook main feature
-
-```python
- displayBooks()
-        name = input("Masukkan nama buku yang ingin dihapus: ")
-        
-        found = False
-        for genre, bookList in books.items():
-            for book in bookList:
-                if book["name"].lower() == name.lower():
-                    bookList.remove(book)
-                    print(f"\nBuku '{book['name']}' berhasil dihapus!\n")
-                    found = True
-                    break            
-            if found:
-                break
-        
-        if not found:    
-            print("\nBuku tidak ditemukan.\n")
-```
-
-- Function `displayBooks()` akan dipanggil untuk referensi user.
-- User diminta untuk input judul buku yang mau dihapus.
-- For loop akan diiterasi untuk mencari judul buku di dalam `books` dictionary.
-    - Jika judul buku ditemukan, loop akan di break.
-
----
-
-## 5. Function `borrowBook()`
-
-```python
-def borrowBook():
-```
-
-Function `borrowBook()` adalah function khusus user type Visitor yang digunakan untuk meminjam buku dari `books` dictionary.
-
-### borrowBook input book
-
-```python
-displayBooks()
-        name = input("Masukkan nama buku yang ingin dipinjam: (tulis 'selesai' untuk kembali ke menu)")
-        if name.lower() == "selesai":
-            break
-```
-
-- User diminta untuk menginput judul buku yang mau dipinjam
-    - User bisa input “selesai” jika ingin kembali ke menu.
-
-### borrowBook main feature
-
-```python
-found = False
-        for genre, bookList in books.items():
-            for book in bookList:
-                if book["name"].lower() == name.lower():
-                    found = True
-                    if book["status"] == "available":
-                        book["status"] = "not available"
-                        borrowedBooks.append(book)
-                        print(f"\nBerhasil meminjam buku '{book['name']}'\n")
-                        return
-                    else:
-                        print("\nMaaf, buku tidak tersedia.\n")
-                    break
-            if found:
-                break
-        if not found:
-            print("\nBuku tidak ditemukan.\n")
-```
-
-- For loop akan dilakukan untuk mencari buku dalam `books` dictionary sesuai dengan judul yang diinput.
-- Jika status buku “available”, buku akan di append ke dictionary `borrowedBooks`.
-    - Jika status “unavailable” function akan print “Maaf, buku tidak tersedia”.
-
----
-
-## 6. Function `viewBorrowedBooks()`
-
-```python
-def viewBorrowedBooks():
-```
-
-Function `viewBorrowedBooks()` adalah function khusus user type Visitor yang digunakan untuk melihat buku yang telah dipinjam.
-
-### viewBorrowedBooks main feature
-
-```python
-if not borrowedBooks:
-        print("\nAnda belum meminjam buku apapun.\n")
-    else:
-        print("\n=== Buku Yang Anda Pinjam ===")
-        headers = ["Book Id", "Judul", "Tahun Publikasi"]
-        table = [[book["book_id"], book["name"], book["year"]] for book in borrowedBooks]
-        print(tabulate(table, headers=headers, tablefmt="grid"))
-```
-
-- Function akan mengecek apakah list `borrowedBooks` memiliki isi buku.
-- Jika buku ditemukan dalam list, function akan iterasi buku dari `borrowedBooks`
-
----
-
-## 7. Function `returnBook()`
-
-```python
-def returnBook():
-```
-
-Function `returnBook()` adalah function khusus user type Visitor yang digunakan untuk mengembalikan buku yang dipinjam.
-
-### returnBook main feature
-
-```python
-viewBorrowedBooks()     
-        name = input("Masukkan judul buku yang ingin dikembalikan: ").strip()
-        
-        found = False
-        for book in borrowedBooks:
-            if book["name"].lower() == name.lower():
-                book["status"] = "available"
-                borrowedBooks.remove(book)
-                print(f"\nBuku '{book['name']}' berhasil dikembalikan!\n")
-                found = True
-                break
-            
-        if not found:
-            print("\nBuku tidak ditemukan dalam daftar pinjaman buku anda.\n")
-            
-        if not borrowedBooks:
-            print("Anda sudah mengembalikan semua buku.\n")
-            break
-```
-
-- Function akan memanggil `viewBorrowedBooks()` untuk referensi user.
-- User diminta input judul buku yang ingin dikembalikan.
-- Function akan melakukan For loop untuk mencari judul buku didalam `borrowBooks` list.
-    - Jika judul buku sesuai dengan input, status buku akan diubah menjadi available dan dihapus dari `borrowedBooks` list.
-
----
-
-## 8. Function `login()`
-
-```python
-def login():
-```
-
-Function `login()` adalah function umum yang digunakan oleh semua user type untuk mengakses Library System.
-
-### login main feature
-
-```python
-		username = None
-    password = None
-    for i in range(3):
-        username = input("Masukkan username: ")
-        password = input("Masukkan password: ")
-        if username in users and users[username]["password"] == password:
-            print(f"\nLogin berhasil! selamat datang di sistem perpustakaan, {username.capitalize()}")
-            return username
-        else:
-            print("Username atau password salah.\n")
-    print("Gagal login setelah 3 kali percobaan.")
-```
-
-- Username dan password di set none
-- User diminta input username dan password
-    - User hanya diberi maksimal attempt tiga kali, jika lebih dari tiga kali attempt sistem akan terminate otomatis.
-    - Jika username atau password salah, function akan iterasi ulang.
-    - Jika login berhasil, function akan return `username` yang nanti akan digunakan di function `mainMenu()`.
-
----
-
-## 9. Function `logout()`
-
-```python
-def logout():
-```
-
-Function `logout()` adalah function umum yang digunakan oleh semua user type untuk kembali ke halaman login.
-
-### logout main feature
-
-```python
-print("Kembali ke halaman login ...\n")
-    return None
-```
-
-- Function akan mengembalikan None yang nantinya akan digunakan dalam `mainMenu` function untuk reset user.
-
----
-
-## 10. Function `mainMenu()`
-
-```python
-def mainMenu():
-```
-
-Function `mainMenu()` adalah function utama dari Library System dimana user bisa berinteraksi dengan sistem.
-
-### mainMenu main feature
-
-```python
-user = None
-        
-    while True:
-        if user == None:
-            user = login()
-            
-        if user == "visitor":
-            print("\n === MENU VISITOR ===")
-            print("1. Lihat daftar buku")
-            print("2. Pinjam Buku")
-            print("3. Kembalikan Buku")
-            print("4. Lihat buku yang dipinjam")
-            print("5. Logout")
-            print("6. Keluar")
-            pilih = input("Pilih menu: ")
-            
-            if pilih == "1":
-                displayBooks()
-            elif pilih == "2":
-                borrowBook()
-            elif pilih == "3":
-                returnBook()
-            elif pilih == "4":
-                viewBorrowedBooks()
-            elif pilih == "5":
-                user = logout()
-            elif pilih == "6":
-                print("\nTerima kasih telah menggunakan sistem perpustakaan.\n")
-                break
-            else:
-                print("\nPilihan tidak valid. Silahkan input pilihan yang sesuai menu.\n")
-        
-        elif user == "librarian":
-            print("\n === MENU LIBRARIAN ===")
-            print("1. Lihat daftar buku")
-            print("2. Tambah Buku")
-            print("3. Hapus Buku")
-            print("4. Logout")
-            print("5. Keluar")
-            pilih = input("Pilih menu: ")
-            
-            if pilih == "1":
-                displayBooks()
-            elif pilih == "2":
-                addBook()
-            elif pilih == "3":
-                removeBook()
-            elif pilih == "4":
-                user = logout()
-            elif pilih == "5":
-                print("\nTerima kasih telah menggunakan sistem perpustakaan.\n")
-                break
-            else:
-                print("\nPilihan tidak valid. Silahkan input pilihan yang sesuai menu.\n")
-```
-
-- `User` akan diset default sebagai `None`.
-- Kondisi If akan otomatis terpenuhi dan menampilkan prompt dari `login()` function.
-- Setelah login `user` akan terset menjadi username pengguna (antara “visitor” atau “librarian”.
-- Function akan menampilkan menu pilihan berdasarkan value`user`.
